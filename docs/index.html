@@ -1,0 +1,84 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+<style>
+  body {
+    padding: 100px;
+    width: 1000px;
+    margin: auto;
+    text-align: left;
+    font-weight: 300;
+    font-family: 'Open Sans', sans-serif;
+    color: #121212;
+  }
+  h1, h2, h3, h4 {
+    font-family: 'Source Sans Pro', sans-serif;
+  }
+</style>
+<title>Custom Font Editing and Rasterization</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<link href="https://fonts.googleapis.com/css?family=Open+Sans|Source+Sans+Pro" rel="stylesheet">
+</head>
+
+
+<body>
+
+<h1 align="middle">CS 184: Computer Graphics and Imaging, Summer 2020</h1>
+<h1 align="middle">Final Project: Custom Font Editing and Rasterization</h1>
+<h2 align="middle">Ethan Nguonly, CS184-aan</h2>
+
+<br><br>
+
+<div>
+
+<h2 align="middle">Overview</h2>
+<p> In this project, I created a font editor and rasterizer for TrueType font files, with the functionalities outlined in an interactive GUI. I used a TrueType font file reading library to convert .ttf files into readable XML format. I then computed and rasterized the pixels on the parametric quadratic Bezier curve connecting each sequential set of three control points. I then rasterized each letter from left to right using a curve-intersection algorithm. In order to alter control points, I edited the contents of the XML file and output them to a new .ttf using the fonttools library. After implementing these features, I created a Tkinter GUI for the user to be able to conveniently type and edit fonts. From this project, I most enjoyed experimenting with changing control points and seeing what cool modifications and custom fonts I could render.</p>
+
+<h2 align="middle">Part 1: Reading TrueType Font Files</h2>
+
+<p> In order to work with the TrueType files, I need a library for reading them. To solve this, I use the fonttools library in Python. Using saveXML, I was able to convert each .ttf file into a readable XML file. From here, I needed to be able to parse the XML file so I used Python's xml.dom.minidom for this.</p>
+
+<h2 align="middle">Part 2: Computing Parametric Quadratic Bezier Curves</h2>
+<p> Once I obtained the TTGlyph object for the corresponding character, I needed to extract its control points. Each TTGlyph object has a Contour object for each curve. For example the letter 'B' has 3 contours. I iterated over all Contours for each character and for each Contour, I iterated over all of its Point objects and saved their coordinate values to an array.</p>
+<p> Each control point is either on or off the Bezier curve, indicated by each Point object. If the point is on the curve, it will be rasterized as part of the character's outline and if it is not, it will only be used as a means of computing the coordinates that will be on the curve. For every 3 subsequent sets of control points, I computed the parametric quadratic Bezier curve from t in [0, 1] using this formula:</p>
+<p> point = (1-t)2*p1+2*t*(1-t)*p2+t2*p3 </p>
+<p> I used a step of t = 1/2000 to ensure that I computed and rasterized every pixel on the curve connecting the points.</p>
+<div align="middle">
+ <table style="width=100%">
+   <tr>
+     <td>
+       <img src="images/" align="middle" width="450px"/>
+       <figcaption align="middle">sphere.json</figcaption>
+     </td>
+     <td>
+       <img src="images/" align="middle" width="450px"/>
+       <figcaption align="middle">sphere.json</figcaption>
+     </td>
+   </tr>
+ </table>
+</div>
+
+<h2 align="middle">Part 3: Rasterizing and Filing Bezier Curves</h2>
+<p> Now that I had rendered the curve outlines of the character, I needed to actually fill the pixels that were inside the region. To do this, I used a row curve intersection algorithm as follows:</p>
+<p>Project a line on each row from left to right</p>
+<p>windingNumber = -1</p>
+<p>If intersects the outline: windingNumber *= -1</p>
+<p>If windingNumber == 1 (we are inside outline): Store x value</p>
+<p>When we intersect the outline again, we have exited shape. Fill pixels of stored x values and set windingNumber back to -1 (outside of outline).</p>
+<p>However, I also had many issues that I had to resolve, namely tangents and cusps, in which my algorithm would think that it was making an intersection when in fact it was not. In order to resolve this, I added two steps to my rasterization process and made a modification to my original algorithm. The first step was adding a function for checking if a point was a valid intersection. However, even with this, my code was still drawing extraneous lines at cusps. To resolve this, I made a significant modification to my original algorithm. My original algorithm is strictly horizontal, meaning it only calculated intersections horizontally. However, if there were false intersections, it would flip and fill the outside of the curves and not the inside region. As such, I changed the algorithm such that if at the end of the row, the windingNumber was 1 (meaning that we are supposed to be inside the shape), I would not draw any pixels on this row because a false intersection must have occured. Of course this left a few rows with white space in them so to resolve this, I made a vertical filling algorithm, that iterating over each column instead of each row. After running the horizontal filling loop, I then ran the vertical filling loop, with the same condition that if the number of intersections was odd (implying a false intersection), not to fill the column. The combined result of filling horizontally and vertically fills the entire character as intended, without the extraneous lines from the false intersections of filling from only one direction.</p>
+
+<h2 align="middle">Part 4: Antialiasing</h2>
+<p>Next to smooth out the curves on my fonts, I implemented a box filter. Each pixel was set to be the average of its 8 surrounding pixels. This allowed me to render a much smoother result to the eye. Below is an example of my antialiasing in action.</p>
+
+<h2 align="middle">Part 5: Optimization</h2>
+<p>I originally wanted to write my project in C++ but ended up using Python because it has a fonttools library that best suited my needs to read ttf files into xml format. However, as you can imagine, iterating over every single pixel in an image represented by a 1000 x 2500 numpy array in Python is extremely slow. I looked into various methods of optimzing my code and decided on using Numba, a machine code wrapper, on my Pythonic numeric array functions. This yield amazing results. For example, it improved rasterization speed of a sample Windsong font ‘B’ from 15 seconds to under 2 seconds, an insane improvement. This allowed me to rasterize fonts much quicker, which is extremely crucial for a user friendly GUI. </p>
+
+<h2 align="middle">Part 6: Editing Control Points</h2>
+<p> Beyond simply rasterizing fonts, I wanted to be able to edit fonts and make modifications to save custom .ttf font files.</p>
+
+<h2 align="middle">Part 7: Interactive GUI</h2>
+
+<h2 align="middle">References</h2>
+
+</body>
+</html>
